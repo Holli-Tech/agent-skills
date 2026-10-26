@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    name: Smoke tests — ${{ matrix.skill }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every skill that ships a test_smoke.sh gets exercised.
+        skill:
+          - creative/vfx-file-naming
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run smoke tests
+        working-directory: skills/${{ matrix.skill }}/scripts
+        run: bash test_smoke.sh
+
+      - name: Validate every filename example in the docs
+        working-directory: skills/${{ matrix.skill }}/scripts
+        run: bash check_examples.sh
+
+  lint:
+    name: Skill hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          set -euo pipefail
+          failed=0
+          for skill in $(find skills -name SKILL.md | sort); do
+            echo "::group::$skill"
+            if ! python3 scripts/check_skill_frontmatter.py "$skill"; then
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+      - name: Check no compiled artifacts tracked
+        run: |
+          if git ls-files | grep -E '\.pyc$|__pycache__'; then
+            echo "::error::compiled Python files are committed"
+            exit 1
+          fi
+          echo "OK no compiled artifacts tracked"
